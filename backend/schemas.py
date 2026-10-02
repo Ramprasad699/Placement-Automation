@@ -8,3 +8,7 @@ class StudentCreate(BaseModel):
     password: str
     branch: str
     cgpa: float
+
+class StudentLogin(BaseModel):
+    email: EmailStr
+    password: str

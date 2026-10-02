@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from .security import hash_password, verify_password
 
 from .database import Base, engine
 
@@ -44,7 +45,7 @@ def create_student(
         student_id=student.student_id,
         name=student.name,
         email=student.email,
-        password=student.password,
+        password=hash_password(student.password),
         branch=student.branch,
         cgpa=student.cgpa
     )
@@ -389,3 +390,30 @@ def download_not_registered_report(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=filename
     )
+
+@app.post("/students/login")
+def student_login(
+    login: schemas.StudentLogin,
+    db: Session = Depends(get_db)
+):
+    student = db.query(models.Student).filter(
+        models.Student.email == login.email
+    ).first()
+
+    if not student:
+        return {
+            "message": "Invalid email or password"
+        }
+
+    if not verify_password(login.password, student.password):
+        return {
+            "message": "Invalid email or password"
+        }
+
+    return {
+        "message": "Login successful!",
+        "student_id": student.student_id,
+        "name": student.name,
+        "branch": student.branch,
+        "cgpa": student.cgpa
+    }
