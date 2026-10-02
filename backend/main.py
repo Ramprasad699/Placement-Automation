@@ -1,14 +1,18 @@
 from fastapi import FastAPI, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from .database import Base, engine
+
 from . import (
     models,
     schemas,
     placement_models,
     placement_schemas,
     registration_models,
-    registration_schemas
+    registration_schemas,
+    excel_report
+
 )
 
 app = FastAPI(title="Placement Automation")
@@ -276,4 +280,112 @@ def get_not_registered_students(
                 "status": "Not Registered"
             })
 
-    return result
+    return 
+
+@app.get("/placement-drives/{drive_id}/registrations/excel")
+def download_registration_report(
+    drive_id: int,
+    db: Session = Depends(get_db)
+):
+    drive = db.query(
+        placement_models.PlacementDrive
+    ).filter(
+        placement_models.PlacementDrive.id == drive_id
+    ).first()
+
+    if not drive:
+        return {
+            "message": "Placement drive not found"
+        }
+
+    registrations = db.query(
+        registration_models.Registration
+    ).filter(
+        registration_models.Registration.placement_drive_id == drive_id
+    ).all()
+
+    result = []
+
+    for registration in registrations:
+        student = db.query(
+            models.Student
+        ).filter(
+            models.Student.student_id == registration.student_id
+        ).first()
+
+        if student:
+            result.append({
+                "student_id": student.student_id,
+                "name": student.name,
+                "branch": student.branch,
+                "cgpa": student.cgpa,
+                "status": registration.status
+            })
+
+    filename = f"registration_report_{drive_id}.xlsx"
+
+    excel_report.create_registration_report(
+        result,
+        filename
+    )
+
+    return FileResponse(
+        filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename
+    )
+
+@app.get("/placement-drives/{drive_id}/not-registered/excel")
+def download_not_registered_report(
+    drive_id: int,
+    db: Session = Depends(get_db)
+):
+    drive = db.query(
+        placement_models.PlacementDrive
+    ).filter(
+        placement_models.PlacementDrive.id == drive_id
+    ).first()
+
+    if not drive:
+        return {
+            "message": "Placement drive not found"
+        }
+
+    eligible_students = db.query(
+        models.Student
+    ).filter(
+        models.Student.cgpa >= drive.min_cgpa,
+        models.Student.branch == drive.eligible_branch
+    ).all()
+
+    result = []
+
+    for student in eligible_students:
+        registration = db.query(
+            registration_models.Registration
+        ).filter(
+            registration_models.Registration.student_id == student.student_id,
+            registration_models.Registration.placement_drive_id == drive_id
+        ).first()
+
+        if not registration:
+            result.append({
+                "student_id": student.student_id,
+                "name": student.name,
+                "branch": student.branch,
+                "cgpa": student.cgpa,
+                "status": "Not Registered"
+            })
+
+    filename = f"not_registered_report_{drive_id}.xlsx"
+
+    excel_report.create_registration_report(
+        result,
+        filename
+    )
+
+    return FileResponse(
+        filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename
+    )
